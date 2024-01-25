@@ -1,0 +1,18 @@
+{
+  "name": "renamer",
+  "version": "0.1.1-alpha",
+  "description": "Complex renamer app",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build -m .env",
+    "format": "yarn run lint:eslint --fix && yarn pretty-quick --write",
+    "lint": "yarn run lint:eslint && yarn run lint:types",
+    "clean": "rm -rf node_modules/.vite ; rm -rf dist"
+  },
+  "dependencies": {
+    "mkdirp": "^3.0.1"
+  },
+  "main": "build/index.js",
+  "types": "build/index.d.ts"
+}
