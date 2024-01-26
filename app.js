@@ -8,7 +8,7 @@ import {mkdirp} from 'mkdirp'
 const fs_promises = fs.promises;
 
 function print_usage() {
-  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--recurse] [--help]`);
+  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--chd] [--recurse] [--help]`);
   console.log(`  --source path  Searches for files to rename in directory named by path`);
   console.log(`  --dest path  Places renamed files into directory named by path`);
   console.log(`  --prefix string  When renaming based on filenames, looks for string as a prefix of each filename. When renaming based on file order, this prefix is used as the base filename unless TV show mode is enabled.`);
@@ -23,6 +23,7 @@ function print_usage() {
   console.log(`  --dot  Don't skip files with names beginning with dot ('.') character. Default is to ignore them.`)
   console.log(`  --touch  Touch the files in source path but do not rename them`);
   console.log(`  --incoming  Check the extract folder in an incoming folder for missing files`);
+  console.log(`  --chd  Convert all disc images in source path into chd rooted at dest path`);
   console.log(`  --recurse  Recurse into subdirectories`);
   console.log(`  --help  Display this message`);
   console.log('');
@@ -82,6 +83,10 @@ const options = {
     type: 'boolean',
     default: false,
   },
+  chd: {
+    type: 'boolean',
+    default: false,
+  },
   // do not perform actions
   dryrun: {
     type: 'boolean',
@@ -129,7 +134,7 @@ async function get_files(dir, skip_dot, recurse, force) {
       if (v.isDirectory()) {
         dirs.push(fullpath);
         if (recurse) {
-          const result = await get_files(fullpath);
+          const result = await get_files(fullpath, skip_dot, recurse, force);
           files = files.concat(result.files);
           dirs = dirs.concat(result.dirs);
         }
@@ -227,7 +232,7 @@ async function rename_by_file_order(dir, dest_dir, prefix = '', season = 1, offs
 // update the file modified time of each file in a dir
 async function touch_dir(dir) {
   console.log(`Touching files in ${dir}...`);
-  const {files} = await get_files(dir, !config.dot, config.recurse, config.force)
+  const {files} = await get_files(dir, !config.dot, config.recurse, config.force);
   const timestamp = new Date();
   timestamp.setFullYear(timestamp.getFullYear() - 1);
   for (const file of files) {
@@ -235,6 +240,41 @@ async function touch_dir(dir) {
       console.log(`Touching ${file}...`);
       if (!config.dryrun) {
         fs.utimesSync(file, timestamp, timestamp);
+      }
+    } catch (e) {
+      console.error(`Caught error: ${JSON.stringify(e)}`);
+      if (!config.force) {
+        throw e;
+      }
+    }
+  }
+}
+
+const chdman_verb_map = {
+  '.iso': 'createdvd',
+  '.gdi': 'createcd',
+  '.cue': 'createcd',
+};
+
+async function to_chd(src_dir, dest_dir) {
+  console.log(`Converting disc images to chd in ${src_dir}...`);
+  const {files} = await get_files(src_dir, !config.dot, true, config.force);
+
+  for (const file of files) {
+    try {
+      const ext = path.extname(file);
+      const chdman_verb = chdman_verb_map[ext];
+      if (!chdman_verb) {
+        continue;
+      }
+
+      const basename = path.basename(file, ext);
+      const new_name = `${basename}.chd`;
+      const new_file = path.join(dest_dir, new_name);
+      const cmd = `chdman ${chdman_verb} -i "${file}" -o "${new_file}"`;
+      console.log(`${cmd}...`);
+      if (!config.dryrun) {
+        console.log(cmd);
       }
     } catch (e) {
       console.error(`Caught error: ${JSON.stringify(e)}`);
@@ -361,10 +401,13 @@ if (config.help || config.source === '') {
 console.log(`Using this config:`);
 console.log(config);
 
-if (config.incoming) {
+const dest_dir = config.dest === '' ? config.source : config.dest;
+
+if (config.chd) {
+  to_chd(config.source, dest_dir)
+} else if (config.incoming) {
   check_incoming(config.source);
 } else if (config.order) {
-  const dest_dir = config.dest === '' ? config.source : config.dest;
   const tv_show_mode = true;
   rename_by_file_order(config.source, dest_dir, config.prefix, config.season, config.offset, tv_show_mode);
 } else if (config.touch) {
