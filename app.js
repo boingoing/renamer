@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import {parseArgs} from 'node:util'
+import {spawnSync} from 'node:child_process'
 import {mkdirp} from 'mkdirp'
 
 'use strict'
@@ -8,7 +9,7 @@ import {mkdirp} from 'mkdirp'
 const fs_promises = fs.promises;
 
 function print_usage() {
-  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--chd] [--recurse] [--help]`);
+  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--chd] [--chdman path] [--recurse] [--help]`);
   console.log(`  --source path  Searches for files to rename in directory named by path`);
   console.log(`  --dest path  Places renamed files into directory named by path`);
   console.log(`  --prefix string  When renaming based on filenames, looks for string as a prefix of each filename. When renaming based on file order, this prefix is used as the base filename unless TV show mode is enabled.`);
@@ -16,14 +17,15 @@ function print_usage() {
   console.log(`  --suffix string  Looks for string as a suffix of each filename (and removes it during rename) when renaming based on filenames`);
   console.log(`  --order  Renames files based on their sort order within the directory`);
   console.log(`  --season number  When renaming based on sort order, use number as season. Only applies when TV show mode is enabled.`);
-  console.log(`  --offset number  When renaming based on file order, starts numbering files from this offset. In TV show mode, this is the episode number.`)
+  console.log(`  --offset number  When renaming based on file order, starts numbering files from this offset. In TV show mode, this is the episode number.`);
   console.log(`  --copy  Copy the files from source rather than moving them during rename`);
   console.log(`  --dryrun  Does everything but perform the actual rename on files`);
   console.log(`  --force  Continue on error`);
-  console.log(`  --dot  Don't skip files with names beginning with dot ('.') character. Default is to ignore them.`)
+  console.log(`  --dot  Don't skip files with names beginning with dot ('.') character. Default is to ignore them.`);
   console.log(`  --touch  Touch the files in source path but do not rename them`);
   console.log(`  --incoming  Check the extract folder in an incoming folder for missing files`);
   console.log(`  --chd  Convert all disc images in source path into chd rooted at dest path`);
+  console.log(`  --chdman path  Path to the chdman binary for use by the --chd switch`);
   console.log(`  --recurse  Recurse into subdirectories`);
   console.log(`  --help  Display this message`);
   console.log('');
@@ -86,6 +88,10 @@ const options = {
   chd: {
     type: 'boolean',
     default: false,
+  },
+  chdman: {
+    type: 'string',
+    default: 'chdman',
   },
   // do not perform actions
   dryrun: {
@@ -256,7 +262,7 @@ const chdman_verb_map = {
   '.cue': 'createcd',
 };
 
-async function to_chd(src_dir, dest_dir) {
+async function to_chd(src_dir, dest_dir, chdman) {
   console.log(`Converting disc images to chd in ${src_dir}...`);
   const {files} = await get_files(src_dir, !config.dot, true, config.force);
 
@@ -271,10 +277,15 @@ async function to_chd(src_dir, dest_dir) {
       const basename = path.basename(file, ext);
       const new_name = `${basename}.chd`;
       const new_file = path.join(dest_dir, new_name);
-      const cmd = `chdman ${chdman_verb} -i "${file}" -o "${new_file}"`;
-      console.log(`${cmd}...`);
+      const args = [chdman_verb, '-i', `"${file}"`, '-o', `"${new_file}"`];
+      console.log(`${chdman} ${args.join(' ')}`);
       if (!config.dryrun) {
-        console.log(cmd);
+        const {output, stderr, error} = spawnSync(chdman, args);
+        if (error) {
+          console.error(`Failed to execute: ${stderr}`)
+          throw error;
+        }
+        console.log(String(output));
       }
     } catch (e) {
       console.error(`Caught error: ${JSON.stringify(e)}`);
@@ -404,7 +415,7 @@ console.log(config);
 const dest_dir = config.dest === '' ? config.source : config.dest;
 
 if (config.chd) {
-  to_chd(config.source, dest_dir)
+  to_chd(config.source, dest_dir, config.chdman);
 } else if (config.incoming) {
   check_incoming(config.source);
 } else if (config.order) {
