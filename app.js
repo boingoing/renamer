@@ -256,6 +256,26 @@ async function touch_dir(dir) {
   }
 }
 
+function spawn(cmd, args) {
+  console.log(`${cmd} ${args.join(' ')}`);
+  if (config.dryrun) {
+    return;
+  }
+  const options = {
+    shell: true
+  };
+  const {output, stderr, error, status} = spawnSync(cmd, args, options);
+  if (error) {
+    console.error(`Failed to execute: ${stderr}`);
+    throw error;
+  }
+  if (status !== 0) {
+    console.error(`Failed to execute: exit code ${status}`);
+    throw status;
+  }
+  console.log(output.join(' '));
+}
+
 const chdman_verb_map = {
   '.iso': 'createdvd',
   '.gdi': 'createcd',
@@ -278,15 +298,9 @@ async function to_chd(src_dir, dest_dir, chdman) {
       const new_name = `${basename}.chd`;
       const new_file = path.join(dest_dir, new_name);
       const args = [chdman_verb, '-i', `"${file}"`, '-o', `"${new_file}"`];
-      console.log(`${chdman} ${args.join(' ')}`);
-      if (!config.dryrun) {
-        const {output, stderr, error} = spawnSync(chdman, args);
-        if (error) {
-          console.error(`Failed to execute: ${stderr}`)
-          throw error;
-        }
-        console.log(String(output));
-      }
+      spawn(chdman, args);
+      const verify_args = ['verify', '-i', `"${new_file}"`];
+      spawn(chdman, verify_args);
     } catch (e) {
       console.error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
