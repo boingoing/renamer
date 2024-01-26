@@ -383,7 +383,7 @@ function remove(dir, prefix, replacement = '', suffix = '') {
 
         console.log(`Attempting to reformat files\n\tSource dir = "${dir}"\n\tPrefix = "${prefix}"\n\tReplacement = "${replacement}"\n\tSuffix = "${suffix}"`);
 
-        for (file of files) {
+        for (const file of files) {
             fullpath = path.join(dir, file)
             const v = fs.statSync(fullpath)
             if (!v.isDirectory()) {
