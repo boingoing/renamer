@@ -508,9 +508,9 @@ async function extract(content_path, save_path, rar) {
     });
 
     // Try to extract any rars into the output
-    const rar_files = path.join(dest_path, '*.rar');
-    const args = ['x', '-y', '-idp', rar_files, dest_path];
-    spawn(rar, args);
+    const rar_files = path.join(content_path, '*.rar');
+    const args = ['x', '-y', '-idp', `"${rar_files}"`, `"${dest_path}"`];
+    spawn(`"${rar}"`, args);
   } catch (e) {
     log_error(`Caught error: ${JSON.stringify(e)}`);
     throw e;
