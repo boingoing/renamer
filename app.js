@@ -441,7 +441,7 @@ async function check_incoming(dir) {
   }
 }
 
-const extract_extension_whitelist_array = [
+const extract_extension_copy_whitelist_array = [
   '.avi',
   '.ts',
   '.mkv',
@@ -452,11 +452,21 @@ const extract_extension_whitelist_array = [
   '.idx',
   '.sub',
 ];
-const extract_extension_whitelist = new Set(extract_extension_whitelist_array);
+const extract_extension_copy_whitelist = new Set(extract_extension_copy_whitelist_array);
 
 function should_copy_one(filename) {
   const ext = path.extname(filename);
-  return extract_extension_whitelist.has(ext);
+  return extract_extension_copy_whitelist.has(ext);
+}
+
+const extract_extensions_archive_whitelist_array = [
+  '.rar',
+];
+const extract_extension_archive_whitelist = new Set(extract_extensions_archive_whitelist_array);
+
+function should_extract_one(filename) {
+  const ext = path.extname(filename);
+  return extract_extension_archive_whitelist.has(ext);
 }
 
 // Extracct file/folder from |content_path| into a folder under |save_path|.
@@ -466,6 +476,7 @@ async function extract(content_path, save_path, rar) {
   const extract_path = path.join(save_path, '!extract');
   const dest_path = path.join(extract_path, filename);
   const logfile = path.join(dest_path, '!extract.log');
+  const rar_files = [];
 
   try {
     mkdir(dest_path);
@@ -496,6 +507,12 @@ async function extract(content_path, save_path, rar) {
         if (v.isDirectory()) {
           return true;
         }
+
+        // Remember if we saw any rar files
+        if (should_extract_one(src)) {
+          rar_files.push(src);
+        }
+
         // Check file extension whitelist
         if (should_copy_one(src)) {
           log(`${src} => ${dst}`);
@@ -508,9 +525,12 @@ async function extract(content_path, save_path, rar) {
     });
 
     // Try to extract any rars into the output
-    const rar_files = path.join(content_path, '*.rar');
-    const args = ['x', '-y', '-idp', `"${rar_files}"`, `"${dest_path}"`];
-    spawn(`"${rar}"`, args);
+    for (const f of rar_files) {
+      const args = ['x', '-y', '-idp', `"${f}"`, `"${dest_path}"`];
+      spawn(`"${rar}"`, args);
+    }
+
+    log(`Done`);
   } catch (e) {
     log_error(`Caught error: ${JSON.stringify(e)}`);
     throw e;
