@@ -9,7 +9,7 @@ import {mkdirp} from 'mkdirp'
 const fs_promises = fs.promises;
 
 function print_usage() {
-  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--chd] [--chdman path] [--recurse] [--help]`);
+  console.log(`node app.js --source path [--dest path] [--prefix string] [--replacement string] [--suffix string] [--order] [--season number] [--offset number] [--copy] [--dryrun] [--force] [--dot] [--touch] [--incoming] [--extract] [--chd] [--chdman path] [--recurse] [--help]`);
   console.log(`  --source path  Searches for files to rename in directory named by path`);
   console.log(`  --dest path  Places renamed files into directory named by path`);
   console.log(`  --prefix string  When renaming based on filenames, looks for string as a prefix of each filename. When renaming based on file order, this prefix is used as the base filename unless TV show mode is enabled.`);
@@ -24,8 +24,10 @@ function print_usage() {
   console.log(`  --dot  Don't skip files with names beginning with dot ('.') character. Default is to ignore them.`);
   console.log(`  --touch  Touch the files in source path but do not rename them`);
   console.log(`  --incoming  Check the extract folder in an incoming folder for missing files`);
+  console.log(`  --extract  Extract a single incoming file/folder into the extract folder. --source argument is used as the incoming file/folder and --dest as the root folder.`);
   console.log(`  --chd  Convert all disc images in source path into chd rooted at dest path`);
   console.log(`  --chdman path  Path to the chdman binary for use by the --chd switch`);
+  console.log(`  --winrar path  Path to the winrar binary for use by the --extract switch`);
   console.log(`  --recurse  Recurse into subdirectories`);
   console.log(`  --help  Display this message`);
   console.log('');
@@ -89,9 +91,17 @@ const options = {
     type: 'boolean',
     default: false,
   },
+  extract: {
+    type: 'boolean',
+    default: false,
+  },
   chdman: {
     type: 'string',
     default: 'chdman',
+  },
+  winrar: {
+    type: 'string',
+    default: 'C:/Program Files/WinRAR/Rar.exe',
   },
   // do not perform actions
   dryrun: {
@@ -126,6 +136,42 @@ const options = {
 };
 const config = parseArgs({options}).values;
 
+const file_logger = {
+  is_enabled: false,
+  file: null,
+  write(str) {
+    if (file_logger.is_enabled) {
+      fs.writeSync(file_logger.file, `${str}\n`);
+      fs.fsyncSync(file_logger.file);
+    }
+  },
+  open(filename) {
+    file_logger.file = fs.openSync(filename, 'w+');
+    file_logger.is_enabled = true;
+  },
+  close() {
+    if (file_logger.is_enabled) {
+      fs.closeSync(file_logger.file);
+    }
+    file_logger.is_enabled = false;
+    file_logger.file = null;
+  },
+};
+
+function log(str) {
+  console.log(str)
+  file_logger.write(str);
+}
+
+function log_error(str) {
+  console.error(str)
+  file_logger.write(str);
+}
+
+function enable_file_logger(filename) {
+  file_logger.open(filename);
+}
+
 async function get_files(dir, skip_dot, recurse, force) {
   const all_files = await fs_promises.readdir(dir);
   let files = [];
@@ -148,7 +194,7 @@ async function get_files(dir, skip_dot, recurse, force) {
       }
       files.push(fullpath);
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!force) {
         throw e;
       }
@@ -187,12 +233,31 @@ function pad4(n) {
   return n;
 }
 
-function rename(fullpath, dest) {
-  console.log(`${fullpath} => ${dest}`);
+function mkdir(fullpath) {
+  try {
+    fs.mkdirSync(fullpath);
+  } catch (e) {
+    // Ignore 'already-exists' error.
+    if (e.code === 'EEXIST') {
+      return;
+    }
+    throw e;
+  }
+}
+
+function copy_file(fullpath, dest) {
+  log(`${fullpath} => ${dest}`);
   if (!config.dryrun) {
-    if (config.copy) {
-      fs.copyFileSync(fullpath, dest);
-    } else {
+    fs.copyFileSync(fullpath, dest);
+  }
+}
+
+function rename(fullpath, dest) {
+  if (config.copy) {
+    copy_file(fullpath, dest);
+  } else {
+    log(`${fullpath} => ${dest}`);
+    if (!config.dryrun) {
       fs.renameSync(fullpath, dest);
     }
   }
@@ -217,7 +282,7 @@ function get_ordered_filename(season, index, prefix, tv_show_mode, extension = '
 // rename all files in a folder into S01Exx.mkv where xx is the relative
 // file index.
 async function rename_by_file_order(dir, dest_dir, prefix = '', season = 1, offset = 1, tv_show_mode = true) {
-  console.log(`Renaming files in ${dir} based on file index...`);
+  log(`Renaming files in ${dir} based on file index...`);
   let index = offset;
   const {files} = await get_files(dir, !config.dot, config.recurse, config.force)
   for (const file of files) {
@@ -227,7 +292,7 @@ async function rename_by_file_order(dir, dest_dir, prefix = '', season = 1, offs
     try {
       rename(file, dest);
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
         throw e;
       }
@@ -237,18 +302,18 @@ async function rename_by_file_order(dir, dest_dir, prefix = '', season = 1, offs
 
 // update the file modified time of each file in a dir
 async function touch_dir(dir) {
-  console.log(`Touching files in ${dir}...`);
+  log(`Touching files in ${dir}...`);
   const {files} = await get_files(dir, !config.dot, config.recurse, config.force);
   const timestamp = new Date();
   timestamp.setFullYear(timestamp.getFullYear() - 1);
   for (const file of files) {
     try {
-      console.log(`Touching ${file}...`);
+      log(`Touching ${file}...`);
       if (!config.dryrun) {
         fs.utimesSync(file, timestamp, timestamp);
       }
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
         throw e;
       }
@@ -257,7 +322,7 @@ async function touch_dir(dir) {
 }
 
 function spawn(cmd, args) {
-  console.log(`${cmd} ${args.join(' ')}`);
+  log(`${cmd} ${args.join(' ')}`);
   if (config.dryrun) {
     return;
   }
@@ -266,14 +331,14 @@ function spawn(cmd, args) {
   };
   const {output, stderr, error, status} = spawnSync(cmd, args, options);
   if (error) {
-    console.error(`Failed to execute: ${stderr}`);
+    log_error(`Failed to execute: ${stderr}`);
     throw error;
   }
   if (status !== 0) {
-    console.error(`Failed to execute: exit code ${status}`);
+    log_error(`Failed to execute: exit code ${status}`);
     throw status;
   }
-  console.log(output.join(' '));
+  log(output.join(' '));
 }
 
 const chdman_verb_map = {
@@ -283,7 +348,7 @@ const chdman_verb_map = {
 };
 
 async function to_chd(src_dir, dest_dir, chdman) {
-  console.log(`Converting disc images to chd in ${src_dir}...`);
+  log(`Converting disc images to chd in ${src_dir}...`);
   const {files} = await get_files(src_dir, !config.dot, true, config.force);
 
   for (const file of files) {
@@ -302,7 +367,7 @@ async function to_chd(src_dir, dest_dir, chdman) {
       const verify_args = ['verify', '-i', `"${new_file}"`];
       spawn(chdman, verify_args);
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
         throw e;
       }
@@ -330,7 +395,7 @@ async function check_one_extract_folder(basename, source_count, extract_path, mi
 }
 
 async function check_incoming(dir) {
-  console.log(`Checking incoming folder ${dir}...`);
+  log(`Checking incoming folder ${dir}...`);
   const extract_path = path.join(dir, '!extract');
   const {files, dirs} = await get_files(dir, !config.dot, config.recurse, config.force);
   const missing_in_extract = [];
@@ -342,7 +407,7 @@ async function check_incoming(dir) {
       const dirname = path.basename(dir);
       await check_one_extract_folder(dirname, source_count, extract_path, missing_in_extract, content_missing_in_extract);
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
         throw e;
       }
@@ -354,7 +419,7 @@ async function check_incoming(dir) {
       const filename = path.basename(file);
       await check_one_extract_folder(filename, 1, extract_path, missing_in_extract, content_missing_in_extract);
     } catch (e) {
-      console.error(`Caught error: ${JSON.stringify(e)}`);
+      log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
         throw e;
       }
@@ -362,17 +427,93 @@ async function check_incoming(dir) {
   }
 
   if (missing_in_extract.length > 0) {
-    console.log('Folders missing from !extract:');
+    log('Folders missing from !extract:');
     for (const f of missing_in_extract) {
-      console.log(f);
+      log(f);
     }
   }
 
   if (content_missing_in_extract.length > 0) {
-    console.log('Folders in !extract with missing content:');
+    log('Folders in !extract with missing content:');
     for (const f of content_missing_in_extract) {
-      console.log(f);
+      log(f);
     }
+  }
+}
+
+const extract_extension_whitelist_array = [
+  '.avi',
+  '.ts',
+  '.mkv',
+  '.mp4',
+  '.m4v',
+  '.wmv',
+  '.srt',
+  '.idx',
+  '.sub',
+];
+const extract_extension_whitelist = new Set(extract_extension_whitelist_array);
+
+function should_copy_one(filename) {
+  const ext = path.extname(filename);
+  return extract_extension_whitelist.has(ext);
+}
+
+// Extracct file/folder from |content_path| into a folder under |save_path|.
+// Does not support --dryrun argument.
+async function extract(content_path, save_path, rar) {
+  const filename = path.basename(content_path);
+  const extract_path = path.join(save_path, '!extract');
+  const dest_path = path.join(extract_path, filename);
+  const logfile = path.join(dest_path, '!extract.log');
+
+  try {
+    mkdir(dest_path);
+    enable_file_logger(logfile);
+    log(`Extracting...`);
+    log(`Root: ${save_path}`);
+    log(`Content: ${content_path}`);
+    log(`Destination: ${dest_path}`);
+
+    // Copy single file to output
+    const v = fs.statSync(content_path);
+    if (!v.isDirectory()) {
+      if (should_copy_one(content_path)) {
+        const dest_file = path.join(dest_path, filename);
+        copy_file(content_path, dest_file);
+      } else {
+        log(`Skipping ${content_path}`);
+      }
+      return;
+    }
+
+    // Copy whitelisted file patterns to output
+    fs.cpSync(content_path, dest_path, {
+      recursive: true,
+      filter(src, dst) {
+        const v = fs.statSync(src);
+        // Copy all subfolders
+        if (v.isDirectory()) {
+          return true;
+        }
+        // Check file extension whitelist
+        if (should_copy_one(src)) {
+          log(`${src} => ${dst}`);
+          return true;
+        }
+
+        log(`Skipping ${src}`);
+        return false;
+      }
+    });
+
+    // Try to extract any rars into the output
+    const rar_files = path.join(dest_path, '*.rar');
+    const args = ['x', '-y', '-idp', rar_files, dest_path];
+    spawn(rar, args);
+  } catch (e) {
+    log_error(`Caught error: ${JSON.stringify(e)}`);
+    throw e;
   }
 }
 
@@ -381,54 +522,56 @@ function remove(dir, prefix, replacement = '', suffix = '') {
     fs_promises.readdir(dir).then(files => {
         let counter = 0;
 
-        console.log(`Attempting to reformat files\n\tSource dir = "${dir}"\n\tPrefix = "${prefix}"\n\tReplacement = "${replacement}"\n\tSuffix = "${suffix}"`);
+        log(`Attempting to reformat files\n\tSource dir = "${dir}"\n\tPrefix = "${prefix}"\n\tReplacement = "${replacement}"\n\tSuffix = "${suffix}"`);
 
         for (const file of files) {
             fullpath = path.join(dir, file)
             const v = fs.statSync(fullpath)
             if (!v.isDirectory()) {
-                console.log(`\t${file}...`);
+                log(`\t${file}...`);
                 let new_name = file;
 
                 if (file.startsWith(prefix)) {
-                    console.log(`\t\tPrefix found`);
+                    log(`\t\tPrefix found`);
                     new_name = new_name.replace(prefix, replacement);
                 }
                 if (file.includes(suffix)) {
-                    console.log(`\t\tSuffix found`);
+                    log(`\t\tSuffix found`);
                     new_name = new_name.replace(suffix, '');
                 }
 
                 if (new_name == file) {
-                    console.log(`\t\tNothing to do`);
+                    log(`\t\tNothing to do`);
                     continue;
                 }
 
                 dest = path.join(dir, new_name);
 
-                console.log(`\t\tRenaming:\n\t\t\t${fullpath}\n\t\t\t=>\n\t\t\t${dest}`);
+                log(`\t\tRenaming:\n\t\t\t${fullpath}\n\t\t\t=>\n\t\t\t${dest}`);
 
                 rename(fullpath, dest);
                 counter++;
             }
         }
-        console.log(`Renamed ${counter} files.`);
+        log(`Renamed ${counter} files.`);
     })
 }
 
-console.log(`Complex renamer app v0.1.1-alpha`);
+log(`Complex renamer app v0.1.1-alpha`);
 
 if (config.help || config.source === '') {
   print_usage();
   process.exit(-1);
 }
 
-console.log(`Using this config:`);
-console.log(config);
+log(`Using this config:`);
+log(config);
 
 const dest_dir = config.dest === '' ? config.source : config.dest;
 
-if (config.chd) {
+if (config.extract) {
+  extract(config.source, dest_dir, config.winrar);
+} else if (config.chd) {
   to_chd(config.source, dest_dir, config.chdman);
 } else if (config.incoming) {
   check_incoming(config.source);
@@ -440,3 +583,5 @@ if (config.chd) {
 } else {
   remove(config.source, config.prefix, config.replacement, config.suffix);
 }
+
+file_logger.close();
