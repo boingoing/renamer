@@ -478,62 +478,55 @@ async function extract(content_path, save_path, rar) {
   const logfile = path.join(dest_path, '!extract.log');
   const rar_files = [];
 
-  try {
-    mkdir(dest_path);
-    enable_file_logger(logfile);
-    log(`Extracting...`);
-    log(`Root: ${save_path}`);
-    log(`Content: ${content_path}`);
-    log(`Destination: ${dest_path}`);
+  mkdir(dest_path);
+  enable_file_logger(logfile);
+  log(`Extracting...`);
+  log(`Root: ${save_path}`);
+  log(`Content: ${content_path}`);
+  log(`Destination: ${dest_path}`);
 
-    // Copy single file to output
-    const v = fs.statSync(content_path);
-    if (!v.isDirectory()) {
-      if (should_copy_one(content_path)) {
-        const dest_file = path.join(dest_path, filename);
-        copy_file(content_path, dest_file);
-      } else {
-        log(`Skipping ${content_path}`);
-      }
-      return;
+  // Copy single file to output
+  const v = fs.statSync(content_path);
+  if (!v.isDirectory()) {
+    if (should_copy_one(content_path)) {
+      const dest_file = path.join(dest_path, filename);
+      copy_file(content_path, dest_file);
+    } else {
+      log(`Skipping ${content_path}`);
     }
+    return;
+  }
 
-    // Copy whitelisted file patterns to output
-    fs.cpSync(content_path, dest_path, {
-      recursive: true,
-      filter(src, dst) {
-        const v = fs.statSync(src);
-        // Copy all subfolders
-        if (v.isDirectory()) {
-          return true;
-        }
-
-        // Remember if we saw any rar files
-        if (should_extract_one(src)) {
-          rar_files.push(src);
-        }
-
-        // Check file extension whitelist
-        if (should_copy_one(src)) {
-          log(`${src} => ${dst}`);
-          return true;
-        }
-
-        log(`Skipping ${src}`);
-        return false;
+  // Copy whitelisted file patterns to output
+  fs.cpSync(content_path, dest_path, {
+    recursive: true,
+    filter(src, dst) {
+      const v = fs.statSync(src);
+      // Copy all subfolders
+      if (v.isDirectory()) {
+        return true;
       }
-    });
 
-    // Try to extract any rars into the output
-    for (const f of rar_files) {
-      const args = ['x', '-y', '-idp', `"${f}"`, `"${dest_path}"`];
-      spawn(`"${rar}"`, args);
+      // Remember if we saw any rar files
+      if (should_extract_one(src)) {
+        rar_files.push(src);
+      }
+
+      // Check file extension whitelist
+      if (should_copy_one(src)) {
+        log(`${src} => ${dst}`);
+        return true;
+      }
+
+      log(`Skipping ${src}`);
+      return false;
     }
+  });
 
-    log(`Done`);
-  } catch (e) {
-    log_error(`Caught error: ${JSON.stringify(e)}`);
-    throw e;
+  // Try to extract any rars into the output
+  for (const f of rar_files) {
+    const args = ['x', '-y', '-idp', `"${f}"`, `"${dest_path}"`];
+    spawn(`"${rar}"`, args);
   }
 }
 
@@ -577,31 +570,52 @@ function remove(dir, prefix, replacement = '', suffix = '') {
     })
 }
 
-log(`Complex renamer app v0.1.1-alpha`);
+function startup_tasks() {
+  log(`Complex renamer app v0.1.2-alpha`);
+  log(process.argv.join(' '));
 
-if (config.help || config.source === '') {
-  print_usage();
-  process.exit(-1);
+  if (config.help || config.source === '') {
+    print_usage();
+    process.exit(-1);
+  }
+
+  log(`Using this config:`);
+  log(config);
 }
 
-log(`Using this config:`);
-log(config);
-
-const dest_dir = config.dest === '' ? config.source : config.dest;
-
-if (config.extract) {
-  extract(config.source, dest_dir, config.winrar);
-} else if (config.chd) {
-  to_chd(config.source, dest_dir, config.chdman);
-} else if (config.incoming) {
-  check_incoming(config.source);
-} else if (config.order) {
-  const tv_show_mode = true;
-  rename_by_file_order(config.source, dest_dir, config.prefix, config.season, config.offset, tv_show_mode);
-} else if (config.touch) {
-  touch_dir(config.source);
-} else {
-  remove(config.source, config.prefix, config.replacement, config.suffix);
+function cleanup_tasks() {
+  file_logger.close();
 }
 
-file_logger.close();
+function perform_action() {
+  const dest_dir = config.dest === '' ? config.source : config.dest;
+
+  if (config.extract) {
+    extract(config.source, dest_dir, config.winrar);
+  } else if (config.chd) {
+    to_chd(config.source, dest_dir, config.chdman);
+  } else if (config.incoming) {
+    check_incoming(config.source);
+  } else if (config.order) {
+    const tv_show_mode = true;
+    rename_by_file_order(config.source, dest_dir, config.prefix, config.season, config.offset, tv_show_mode);
+  } else if (config.touch) {
+    touch_dir(config.source);
+  } else {
+    remove(config.source, config.prefix, config.replacement, config.suffix);
+  }
+}
+
+function main() {
+  try {
+    startup_tasks();
+    perform_action();
+    log(`Done`);
+  } catch (e) {
+    log_error(`Caught error: ${JSON.stringify(e)}`);
+  } finally {
+    cleanup_tasks();
+  }
+}
+
+main();
