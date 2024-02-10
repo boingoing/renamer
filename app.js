@@ -286,7 +286,7 @@ async function rename_by_file_order(dir, dest_dir, prefix = '', season = 1, offs
   let index = offset;
   const {files} = await get_files(dir, !config.dot, config.recurse, config.force)
   for (const file of files) {
-    const ext = path.extname(file)
+    const ext = path.extname(file).toLowerCase();
     const new_name = get_ordered_filename(season, index++, prefix, tv_show_mode, ext);
     const dest = path.join(dest_dir, new_name);
     try {
@@ -354,7 +354,7 @@ async function to_chd(src_dir, dest_dir, chdman) {
   for (const file of files) {
     try {
       const ext = path.extname(file);
-      const chdman_verb = chdman_verb_map[ext];
+      const chdman_verb = chdman_verb_map[ext.toLowerCase()];
       if (!chdman_verb) {
         continue;
       }
@@ -455,7 +455,7 @@ const extract_extension_copy_whitelist_array = [
 const extract_extension_copy_whitelist = new Set(extract_extension_copy_whitelist_array);
 
 function should_copy_one(filename) {
-  const ext = path.extname(filename);
+  const ext = path.extname(filename).toLowerCase();
   return extract_extension_copy_whitelist.has(ext);
 }
 
@@ -465,7 +465,7 @@ const extract_extensions_archive_whitelist_array = [
 const extract_extension_archive_whitelist = new Set(extract_extensions_archive_whitelist_array);
 
 function should_extract_one(filename) {
-  const ext = path.extname(filename);
+  const ext = path.extname(filename).toLowerCase();
   return extract_extension_archive_whitelist.has(ext);
 }
 
