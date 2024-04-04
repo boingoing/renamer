@@ -394,7 +394,7 @@ async function check_one_extract_folder(basename, source_count, extract_path, mi
     return;
   }
 
-  matching_in_extract.push(basename)
+  matching_in_extract.push(basename);
 }
 
 async function check_incoming(dir) {
@@ -409,7 +409,7 @@ async function check_incoming(dir) {
     try {
       const source_count = await file_count(dir);
       const dirname = path.basename(dir);
-      await check_one_extract_folder(dirname, source_count, extract_path, missing_in_extract, content_missing_in_extract);
+      await check_one_extract_folder(dirname, source_count, extract_path, missing_in_extract, content_missing_in_extract, matching_in_extract);
     } catch (e) {
       log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
@@ -421,7 +421,7 @@ async function check_incoming(dir) {
   for (const file of files) {
     try {
       const filename = path.basename(file);
-      await check_one_extract_folder(filename, 1, extract_path, missing_in_extract, content_missing_in_extract);
+      await check_one_extract_folder(filename, 1, extract_path, missing_in_extract, content_missing_in_extract, matching_in_extract);
     } catch (e) {
       log_error(`Caught error: ${JSON.stringify(e)}`);
       if (!config.force) {
