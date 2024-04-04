@@ -380,7 +380,7 @@ async function file_count(dir) {
   return files.length;
 }
 
-async function check_one_extract_folder(basename, source_count, extract_path, missing_in_extract, content_missing_in_extract) {
+async function check_one_extract_folder(basename, source_count, extract_path, missing_in_extract, content_missing_in_extract, matching_in_extract) {
   const extract_file_path = path.join(extract_path, basename);
 
   if (!fs.existsSync(extract_file_path)) {
@@ -391,7 +391,10 @@ async function check_one_extract_folder(basename, source_count, extract_path, mi
   const extract_count = await file_count(extract_file_path);
   if ((source_count+1) !== extract_count) {
     content_missing_in_extract.push(basename);
+    return;
   }
+
+  matching_in_extract.push(basename)
 }
 
 async function check_incoming(dir) {
@@ -400,6 +403,7 @@ async function check_incoming(dir) {
   const {files, dirs} = await get_files(dir, !config.dot, config.recurse, config.force);
   const missing_in_extract = [];
   const content_missing_in_extract = [];
+  const matching_in_extract = [];
 
   for (const dir of dirs) {
     try {
@@ -427,15 +431,22 @@ async function check_incoming(dir) {
   }
 
   if (missing_in_extract.length > 0) {
-    log('Folders missing from !extract:');
+    log('\nFolders missing from !extract:');
     for (const f of missing_in_extract) {
       log(f);
     }
   }
 
   if (content_missing_in_extract.length > 0) {
-    log('Folders in !extract with missing content:');
+    log('\nFolders in !extract with missing content:');
     for (const f of content_missing_in_extract) {
+      log(f);
+    }
+  }
+
+  if (matching_in_extract.length > 0) {
+    log('\nFolders in !extract with matching content:');
+    for (const f of matching_in_extract) {
       log(f);
     }
   }
@@ -610,7 +621,7 @@ async function main() {
   try {
     startup_tasks();
     await perform_action();
-    log(`Done`);
+    log(`\nDone`);
   } catch (e) {
     log_error(`Caught error: ${JSON.stringify(e)}`);
   } finally {
