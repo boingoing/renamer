@@ -587,29 +587,29 @@ function cleanup_tasks() {
   file_logger.close();
 }
 
-function perform_action() {
+async function perform_action() {
   const dest_dir = config.dest === '' ? config.source : config.dest;
 
   if (config.extract) {
-    extract(config.source, dest_dir, config.winrar);
+    return extract(config.source, dest_dir, config.winrar);
   } else if (config.chd) {
-    to_chd(config.source, dest_dir, config.chdman);
+    return to_chd(config.source, dest_dir, config.chdman);
   } else if (config.incoming) {
-    check_incoming(config.source);
+    return check_incoming(config.source);
   } else if (config.order) {
     const tv_show_mode = true;
-    rename_by_file_order(config.source, dest_dir, config.prefix, config.season, config.offset, tv_show_mode);
+    return rename_by_file_order(config.source, dest_dir, config.prefix, config.season, config.offset, tv_show_mode);
   } else if (config.touch) {
-    touch_dir(config.source);
+    return touch_dir(config.source);
   } else {
     remove(config.source, config.prefix, config.replacement, config.suffix);
   }
 }
 
-function main() {
+async function main() {
   try {
     startup_tasks();
-    perform_action();
+    await perform_action();
     log(`Done`);
   } catch (e) {
     log_error(`Caught error: ${JSON.stringify(e)}`);
