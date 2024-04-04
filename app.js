@@ -431,6 +431,7 @@ async function check_incoming(dir) {
   }
 
   if (missing_in_extract.length > 0) {
+    missing_in_extract.sort()
     log('\nFolders missing from !extract:');
     for (const f of missing_in_extract) {
       log(f);
@@ -438,6 +439,7 @@ async function check_incoming(dir) {
   }
 
   if (content_missing_in_extract.length > 0) {
+    content_missing_in_extract.sort()
     log('\nFolders in !extract with missing content:');
     for (const f of content_missing_in_extract) {
       log(f);
@@ -445,6 +447,7 @@ async function check_incoming(dir) {
   }
 
   if (matching_in_extract.length > 0) {
+    matching_in_extract.sort()
     log('\nFolders in !extract with matching content:');
     for (const f of matching_in_extract) {
       log(f);
