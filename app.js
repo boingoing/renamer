@@ -177,6 +177,9 @@ async function get_files(dir, skip_dot, recurse, force) {
   let files = [];
   let dirs = [];
   for (const file of all_files) {
+    if (file === logfile_name) {
+      continue;
+    }
     if (file.startsWith('.') && skip_dot) {
       continue;
     }
@@ -483,13 +486,15 @@ function should_extract_one(filename) {
   return extract_extension_archive_whitelist.has(ext);
 }
 
+const logfile_name = '!extract.log';
+
 // Extracct file/folder from |content_path| into a folder under |save_path|.
 // Does not support --dryrun argument.
 async function extract(content_path, save_path, rar) {
   const filename = path.basename(content_path);
   const extract_path = path.join(save_path, '!extract');
   const dest_path = path.join(extract_path, filename);
-  const logfile = path.join(dest_path, '!extract.log');
+  const logfile = path.join(dest_path, logfile_name);
   const rar_files = [];
 
   mkdir(dest_path);
